@@ -122,7 +122,7 @@ class Lexer:
             return Token(KEYWORD_CONSANTS[id_str], id_str)
         elif id_str in  FUNCTION_KEYWORDS.keys():
             return Token(FUNCTION_KEYWORDS[id_str], id_str)
-        elif id_str in DIGITS:
+        elif id_str.isdigit():
             return Token('VALUE', id_str)
         else:
             return Token('VARIABLE', id_str)
