@@ -30,7 +30,7 @@ KEYWORD_CONSANTS = {
     'myBallons': 'SELFBALLONSCONSTANT',
     'ballonsHere': 'CELLBALLONSCONSTANT',
     'ChipsHere': 'AVAILABLECHIPSCONSTANT',
-    'Spaces': 'POSSIBLECHIPSDROPCONSTANT',
+    'Spaces': 'POSSIBLECHIPSDROPCONSTANT', 
     ':left': 'LEFTCONSTANT',
     ':right': 'RIGHTCONSTANT',
     ':around': 'AROUNDCONSTANT',
