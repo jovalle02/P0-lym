@@ -1,0 +1,42 @@
+program    -> statement*
+
+statement  -> ( defvar IDENTIFIER expression )
+            | ( defun IDENTIFIER ( parameters* ) command* )
+            | ( run-dirs direction* )
+            | command
+
+direction  -> : north | : south | : east | : west
+
+command    -> ( if condition program program )
+            | ( move direction )
+            | ( put type expression )
+            | ( pick type expression )
+            | ( defvar IDENTIFIER expression )
+            | ( defun IDENTIFIER parameters program )
+            | ( repeat expression program* )
+            | ( move-dir VALUE direction )
+            | (  )
+
+condition  -> ( facing? direction )
+            | ( blocked? )
+            | ( can-move? direction )
+            | ( can-put? VALUE type)
+            | ( can-pick? VALUE type)
+            | ( isZero? VALUE )
+
+expression -> INTEGER
+            | IDENTIFIER
+            | 
+            | ( not expression )
+            | ( expression operator expression )
+            | ( expression )
+
+operator   -> + | - | * | /
+
+type -> :balloons | :chips
+
+IDENTIFIER -> [a-zA-Z][a-zA-Z0-9]*
+
+parameters -> [a-zA-Z]
+
+INTEGER    -> [0-9]+
