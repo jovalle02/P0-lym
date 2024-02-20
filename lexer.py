@@ -532,7 +532,6 @@ class Parser:
         expressions = []
 
         while self.current_token.type != 'EOF':
-            print(self.current_token)
             if not (self.token_index == (len(self.tokens) - 2)) and self.current_token.type == 'CLOSINGPARENTHESIS':
                 self.advance()
             expr = res.register(self.expr())
@@ -809,7 +808,6 @@ class Parser:
                 first = False
                 second = False
                 third = False
-                print(functionScope)
                 
                 if self.current_token.value not in globalVariables.keys() and self.current_token.value not in functionScope:
                     first = True
@@ -1295,11 +1293,9 @@ class Parser:
                         res.register_advancement()
                         self.advance()
                             
-                    
-                    print(true_case, else_case)
+
                     # Check for the closing parenthesis for the else case
                     if self.current_token.type != 'CLOSINGPARENTHESIS':
-                        print(self.current_token.value)
                         return res.failure(InvalidSyntaxError(
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected closing parenthesis for else case"
@@ -1445,9 +1441,7 @@ class Parser:
                 
             
         else:
-            print(self.current_token, self.token_index)
             if self.current_token.type =='EOF':
-                print("program finalized!")
                 return res.success(FinishNode())
             
             return res.failure(InvalidSyntaxError(
