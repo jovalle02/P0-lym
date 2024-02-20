@@ -10,6 +10,7 @@ DIGITS = '0123456789'
 
 FUNCTION_KEYWORDS = {
     'defvar': 'DEFVARKEYWORD',
+    'defun': 'DEFUNKEYWORD',
     'move': 'MOVEFUNCTION',
     'skip': 'SKIPFUNCTION',
     'turn': 'TURNFUNCTION',
@@ -51,7 +52,7 @@ VALUE_CONSTANTS = {
     'myYpos': 'POSITIONYCONSTANT',
     'myChips': 'CHIPSCONSTAT',
     'myBallons': 'SELFBALLONSCONSTANT',
-    'ballonsHere': 'CELLBALLONSCONSTANT',
+    'balloonsHere': 'CELLBALLONSCONSTANT',
     'ChipsHere': 'AVAILABLECHIPSCONSTANT',
     'Spaces': 'POSSIBLECHIPSDROPCONSTANT', 
 }
@@ -261,8 +262,8 @@ class defunNode:
         self.body_node = body_node
         self.params_node = params_node
         
-        self.pos_start = self.token.pos_start
-        self.pos_end = self.token.pos_end
+        self.pos_start = self.left_node.pos_start
+        self.pos_end = self.body_node.pos_end
         
     def __repr__(self):
         return f'({self.left_node}, {self.body_node}, {self.params_node})'
@@ -331,8 +332,8 @@ class runDirsNode:
     def __init__(self, value_node):
         self.value_node = value_node
         
-        self.pos_start = self.var_name_node.pos_start
-        self.pos_end = self.value_node.pos_end
+        self.pos_start = self.value_node[0].pos_start
+        self.pos_end = self.value_node[0].pos_end
         
 class moveFaceNode:
     def __init__(self, var_name_node, value_node):
@@ -418,12 +419,30 @@ class conditional:
     def __repr__(self):
         return f'{self.value_node}'
     
+class callFunctionNode:
+    def __init__(self, calledfunction_node, params_node):
+        self.var_name_node = calledfunction_node
+        self.value_node = params_node
+        
+    def __repr__(self):
+        return f'{self.value_node}'
+    
 class nullNode:
     def __init__(self, value_node):
         self.value_node = value_node
         
         self.pos_start = self.value_node.pos_start
         self.pos_end = self.value_node.pos_end
+    def __repr__(self):
+        return f'{self.value_node}'
+    
+class FinishNode:
+    def __repr__(self):
+        return f'made it'
+    
+class paramsNode:
+    def __init__(self, value_node):
+        self.value_node = value_node
     def __repr__(self):
         return f'{self.value_node}'
 
@@ -436,8 +455,17 @@ class constantNode:
     def __repr__(self):
         return f'{self.name_node}'
     
+class ProgramNode:
+    def __init__(self, expressions):
+        self.expressions = expressions
+
+    def __repr__(self):
+        return f'({", ".join(map(str, self.expressions))})'
+    
 ####### ESTABLISH GLOBAL VARIABLES ######
 globalVariables = {}
+globalFunctions = {}
+functionScope = []
     
 #PERSERASULT
     
@@ -473,7 +501,14 @@ class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
         self.token_index = -1
+        self.current_scope = []
         self.advance()
+        
+    def enter_scope(self, variables):
+        self.current_scope.extend(variables)
+
+    def exit_scope(self, num_variables):
+        self.current_scope = self.current_scope[:-num_variables]
         
     def advance(self, ):
         self.token_index += 1
@@ -482,7 +517,9 @@ class Parser:
         return self.current_token
     
     def parse(self):
-        res = self.expr()
+        res = self.parse_program()
+
+        
         if not res.error and self.current_token.type != 'EOF':
             return res.failure(InvalidSyntaxError(
                 self.current_token.pos_start, self.current_token.pos_end,
@@ -490,13 +527,94 @@ class Parser:
             ))
         return res
     
+    def parse_program(self):
+        res = ParseResult()
+        expressions = []
+
+        while self.current_token.type != 'EOF':
+            print(self.current_token)
+            if not (self.token_index == (len(self.tokens) - 2)) and self.current_token.type == 'CLOSINGPARENTHESIS':
+                self.advance()
+            expr = res.register(self.expr())
+            if res.error:
+                return res
+            expressions.append(expr)
+
+        return res.success(ProgramNode(expressions))
+    
+    def parse_params_functioncallout(self):
+        res = ParseResult()
+        params = []
+
+        while self.current_token.type == 'VALUE' or self.current_token.type == "VARIABLE":
+            params.append(self.current_token)
+            res.register_advancement()
+            self.advance()
+
+        return res.success(paramsNode(params))
+
+    
+    def parse_params(self):
+        res = ParseResult()
+        params = []
+        
+        if self.current_token.type == 'CLOSINGPARENTHESIS':
+            return res.success(paramsNode(params))
+
+        if self.current_token.type != 'OPENPARENTHESIS':
+            return res.failure(InvalidSyntaxError(
+                self.current_token.pos_start, self.current_token.pos_end,
+                "Expected opening parenthesis for parameters"
+            ))
+
+
+        res.register_advancement()
+        self.advance()
+
+        while self.current_token.type == 'VARIABLE':
+            params.append(self.current_token)
+            res.register_advancement()
+            self.advance()
+
+        if self.current_token.type != 'CLOSINGPARENTHESIS':
+            return res.failure(InvalidSyntaxError(
+                self.current_token.pos_start, self.current_token.pos_end,
+                "Expected closing parenthesis for parameters"
+            ))
+
+
+        return res.success(paramsNode(params))
+    
     def expr(self):
         res = ParseResult()
         
         if self.current_token.matches('OPENPARENTHESIS'):
             res.register_advancement()
             self.advance()
-            if self.current_token.matches('DEFVARKEYWORD'):
+            if self.current_token.value in globalFunctions.keys():
+                    name_function = self.current_token.value
+                    res.register_advancement()
+                    self.advance()
+                    
+                    
+                    params = res.register(self.parse_params_functioncallout())
+                    if res.error:
+                        return res
+                    if not (len(params.value_node) == len(globalFunctions[name_function][1].value_node)):
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected a different number of parameters"
+                        ))
+
+                        
+                    if self.current_token.type != 'CLOSINGPARENTHESIS':
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected closing parenthesis after params in function call"
+                        ))
+                        
+                    return res.success(callFunctionNode(name_function, params)) 
+            elif self.current_token.matches('DEFVARKEYWORD'):
                 res.register_advancement()
                 self.advance()
                 
@@ -591,9 +709,7 @@ class Parser:
                     return res.failure(InvalidSyntaxError(
                                 self.current_token.pos_start, self.current_token.pos_end,
                                 "Expected closing parenthesis"))  
-                    
-                res.register_advancement()
-                self.advance()
+                
                 return res.success(moveNode(value))
             elif self.current_token.matches('SKIPFUNCTION'):
                 res.register_advancement()
@@ -635,7 +751,7 @@ class Parser:
                 res.register_advancement()
                 self.advance()
                 
-                if self.current_token.type not in [':around', ':left', ':right']:
+                if self.current_token.value not in [':around', ':left', ':right']:
                     return res.failure(InvalidSyntaxError(
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected :around, :left or :right constants"))
@@ -693,8 +809,9 @@ class Parser:
                 first = False
                 second = False
                 third = False
+                print(functionScope)
                 
-                if self.current_token.value not in globalVariables.keys():
+                if self.current_token.value not in globalVariables.keys() and self.current_token.value not in functionScope:
                     first = True
                     
                 if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -706,7 +823,7 @@ class Parser:
                 if first and second and third:
                     return res.failure(InvalidSyntaxError(
                             self.current_token.pos_start, self.current_token.pos_end,
-                            "Expected either a variable, constant or value."))
+                            "Expected either a variable, constant or value. got" + self.current_token.value))
                     
                 value = self.current_token  
                 res.register_advancement()
@@ -717,8 +834,6 @@ class Parser:
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected closing parenthesis"))  
                 
-                res.register_advancement()
-                self.advance()
                 
                 return res.success(putNode(typeof, value))
             
@@ -739,10 +854,10 @@ class Parser:
                 second = False
                 third = False
                 
-                if self.current_token.value not in globalVariables.keys():
+                if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                     first = True
                     
-                if self.current_token.type not in VALUE_CONSTANTS.values():
+                if self.current_token.value not in VALUE_CONSTANTS.keys():
                     second = True
                     
                 if self.current_token.type != 'VALUE':
@@ -762,8 +877,6 @@ class Parser:
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected closing parenthesis"))  
                 
-                res.register_advancement()
-                self.advance()
                 
                 return res.success(pickNode(typeof, value))
 
@@ -775,7 +888,7 @@ class Parser:
                 second = False
                 third = False
                 
-                if self.current_token.value not in globalVariables.keys():
+                if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                     first = True
                     
                 if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -807,8 +920,6 @@ class Parser:
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected closing parenthesis"))  
                 
-                res.register_advancement()
-                self.advance()
                 
                 return res.success(moveDirsNode(typeof, value))
             
@@ -818,8 +929,10 @@ class Parser:
                 
                 statements = []
                 
-                while self.current_token.type != 'CLOSINGPARENTHESIS' or self.current_token.type not in [":front", ":right", ":left", ":back"]:
-                    if self.current_token.type not in [":front", ":right", ":left", ":back"]:
+                while self.current_token.type != 'CLOSINGPARENTHESIS' or self.current_token.value not in [":front", ":right", ":left", ":back"]:
+                    if self.current_token.type == 'CLOSINGPARENTHESIS':
+                        break
+                    if self.current_token.value not in [":front", ":right", ":left", ":back"]:
                         return res.failure(InvalidSyntaxError(
                                 self.current_token.pos_start, self.current_token.pos_end,
                                 'Expected ":front", ":right", ":left" or ":back" constants'))
@@ -847,8 +960,6 @@ class Parser:
                             self.current_token.pos_start, self.current_token.pos_end,
                             "Expected closing parenthesis"))
                     
-                res.register_advancement()
-                self.advance()
                 
                 return res.success(nullNode(value))
             
@@ -860,7 +971,7 @@ class Parser:
                 second = False
                 third = False
                 
-                if self.current_token.value not in globalVariables.keys():
+                if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                     first = True
                     
                 if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -906,30 +1017,19 @@ class Parser:
                                 self.current_token.pos_start, self.current_token.pos_end,
                                 "Expected opening parenthesis"))  
                         
-                    res.register_advancement()
-                    self.advance()
-                    
-                    if "CONDITION" not in self.current_token.type:
-                        return res.failure(InvalidSyntaxError(
-                                self.current_token.pos_start, self.current_token.pos_end,
-                                "Expected condition"))  
+                    condition = res.register(self.expr())
+                    if res.error:
+                        return res
                     
                     condition = self.current_token
-                    res.register_advancement()
-                    self.advance()
+
                     
+
                     if self.current_token.type != "CLOSINGPARENTHESIS":
                         return res.failure(InvalidSyntaxError(
                                 self.current_token.pos_start, self.current_token.pos_end,
                                 "Expected closing parenthesis")) 
                         
-                    res.register_advancement()
-                    self.advance()
-                    if self.current_token.type != "CLOSINGPARENTHESIS":
-                        return res.failure(InvalidSyntaxError(
-                                self.current_token.pos_start, self.current_token.pos_end,
-                                "Expected opening parenthesis")) 
-
                     res.register_advancement()
                     self.advance()
                     return res.success(notConditional(condition))   
@@ -971,7 +1071,7 @@ class Parser:
                         second = False
                         third = False
                         
-                        if self.current_token.value not in globalVariables.keys():
+                        if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                             first = True
                             
                         if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -1012,7 +1112,7 @@ class Parser:
                         second = False
                         third = False
                         
-                        if self.current_token.value not in globalVariables.keys():
+                        if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                             first = True
                             
                         if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -1067,7 +1167,7 @@ class Parser:
                         second = False
                         third = False
                         
-                        if self.current_token.value not in globalVariables.keys():
+                        if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
                             first = True
                             
                         if self.current_token.type not in VALUE_CONSTANTS.values():
@@ -1088,19 +1188,21 @@ class Parser:
                             return res.failure(InvalidSyntaxError(
                                     self.current_token.pos_start, self.current_token.pos_end,
                                     "Expected closing parenthesis.")) 
+                            
                         res.register_advancement()
                         self.advance()                      
                         return res.success(conditional(condition))    
 
                     if self.current_token.type == "BLOCKEDCONDITION":
-                        res.register_advancement()
                         condition = self.current_token
+                        res.register_advancement()
                         self.advance()
                           
                         if self.current_token.type != "CLOSINGPARENTHESIS":
                             return res.failure(InvalidSyntaxError(
                                     self.current_token.pos_start, self.current_token.pos_end,
                                     "Expected closing parenthesis.")) 
+                            
                         res.register_advancement()
                         self.advance()                      
                         return res.success(conditional(condition))  
@@ -1124,25 +1226,109 @@ class Parser:
 
                     # Parse the true case
                     true_case = []
+                    if self.current_token.type == 'OPENPARENTHESIS' and self.current_token.type == self.tokens[self.token_index + 1].type:
+                        res.register_advancement()
+                        self.advance()
+                        while not self.current_token.matches('CLOSINGPARENTHESIS'):
+                            expr = res.register(self.expr())
+                            if res.error:
+                                return res
+                            true_case.append(expr)
+                            self.advance()
+                            
+                        res.register_advancement()
+                        self.advance()
+                            
+                    else:
+                        if self.current_token.type != 'OPENPARENTHESIS':
+                            return res.failure(InvalidSyntaxError(
+                                self.current_token.pos_start, self.current_token.pos_end,
+                                "Expected opening parenthesis"
+                            ))
+                            
+                        expr = res.register(self.expr())
+                        if res.error:
+                            return res
+                        true_case.append(expr)
+                            
+                        if self.current_token.type != 'CLOSINGPARENTHESIS':
+                            return res.failure(InvalidSyntaxError(
+                                self.current_token.pos_start, self.current_token.pos_end,
+                                "Expected CLOSING parenthesis"
+                            ))
+                        res.register_advancement()
+                        self.advance()
+                    
+                    else_case = []
+                    # Parse the else case
+                    if self.current_token.type == 'OPENPARENTHESIS' and self.current_token.type == self.tokens[self.token_index + 1].type:
+                        res.register_advancement()
+                        self.advance()
+                        
+                        while not self.current_token.matches('CLOSINGPARENTHESIS'):
+                            expr = res.register(self.expr())
+                            if res.error:
+                                return res
+                            else_case.append(expr)
+                            self.advance()
+
+                        res.register_advancement()
+                        self.advance()
+                    
+                    else: 
+                        if self.current_token.type != 'OPENPARENTHESIS':
+                            return res.failure(InvalidSyntaxError(
+                                self.current_token.pos_start, self.current_token.pos_end,
+                                "Expected opening parenthesis"
+                            ))
+                            
+                        expr = res.register(self.expr())
+                        if res.error:
+                            return res
+                        else_case.append(expr)
+                            
+                        if self.current_token.type != 'CLOSINGPARENTHESIS':
+                            return res.failure(InvalidSyntaxError(
+                                self.current_token.pos_start, self.current_token.pos_end,
+                                "Expected CLOSING parenthesis"
+                            ))
+                        res.register_advancement()
+                        self.advance()
+                            
+                    
+                    print(true_case, else_case)
+                    # Check for the closing parenthesis for the else case
+                    if self.current_token.type != 'CLOSINGPARENTHESIS':
+                        print(self.current_token.value)
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected closing parenthesis for else case"
+                        ))
+
+                    
+                    return res.success(IfNode(condition, true_case[0], else_case[-1]))
+                        
+            elif self.current_token.matches('LOOP'):
+                    res.register_advancement()
+                    self.advance()
+                    
+                    # Parse the condition
+                    condition = res.register(self.expr())
+                    if res.error:
+                        return res
+
+                    # Parse the case
+                    true_case = []
                     while not self.current_token.matches('CLOSINGPARENTHESIS'):
                         expr = res.register(self.expr())
                         if res.error:
                             return res
                         true_case.append(expr)
                         
-                    res.register_advancement()
-                    self.advance()
+                    if len(true_case) > 1:
+                        res.register_advancement()
+                        self.advance()
 
-                    # Parse the else case
-                    else_case = []
-                    while not self.current_token.matches('CLOSINGPARENTHESIS'):
-                        expr = res.register(self.expr())
-                        if res.error:
-                            return res
-                        else_case.append(expr)
-
-                    res.register_advancement()
-                    self.advance()
                     # Check for the closing parenthesis for the else case
                     if self.current_token.type != 'CLOSINGPARENTHESIS':
                         return res.failure(InvalidSyntaxError(
@@ -1153,12 +1339,121 @@ class Parser:
                     res.register_advancement()
                     self.advance()
 
-                    return res.success(IfNode(condition, true_case[0], else_case[-1]))           
+                    return res.success(loopNode(condition, true_case[-1]))    
+
+            elif self.current_token.matches('REPEAT'):
+                    res.register_advancement()
+                    self.advance()
+                    
+                    first = False
+                    second = False
+                    third = False
+                    
+                    if self.current_token.value not in globalVariables.keys() and self.current_token not in self.current_scope:
+                        first = True
+                        
+                    if self.current_token.type not in VALUE_CONSTANTS.values():
+                        second = True
+                        
+                    if self.current_token.type != 'VALUE':
+                        third = True
+                            
+                    if first and second and third:
+                        return res.failure(InvalidSyntaxError(
+                                self.current_token.pos_start, self.current_token.pos_end,
+                                "Expected either a variable, constant or value."))
+                    
+                    value = self.current_token
+                    res.register_advancement()
+                    self.advance()    
+                    # Parse the body
+                    true_case = []
+                    while not self.current_token.matches('CLOSINGPARENTHESIS'):
+                        expr = res.register(self.expr())
+                        if res.error:
+                            return res
+                        true_case.append(expr)
+                        
+                    if len(true_case) > 1:
+                        res.register_advancement()
+                        self.advance()
+
+                    # Check for the closing parenthesis for the else case
+                    if self.current_token.type != 'CLOSINGPARENTHESIS':
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected closing parenthesis for else case"
+                        ))
+
+                    
+                    return res.success(repetTimesNode(value, true_case[-1])) 
+            elif self.current_token.matches('DEFUNKEYWORD'):
+                    res.register_advancement()
+                    self.advance()
+
+                    # Parse function name
+                    if self.current_token.type != 'VARIABLE':
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected function name"
+                        ))
+
+                    name = self.current_token
+                    res.register_advancement()
+                    self.advance()
+
+                    # Parse parameters
+                    params = res.register(self.parse_params())
+                    if res.error:
+                        return res
+                    
+                    for param in params.value_node:
+                        functionScope.append(param.value)
+
+                    res.register_advancement()
+                    self.advance()
+                    # Parse body
+                    body = []
+                    globalFunctions[name.value] = body, params
+                    
+                    parentheses_count = 0
+                    
+                    while not self.current_token.matches('CLOSINGPARENTHESIS'):
+                        if self.current_token.matches('CLOSINGPARENTHESIS'):
+                            break
+                        # Parse an expression as part of the function body
+                        expr = res.register(self.expr())
+                        if res.error:
+                            return res
+                        body.append(expr)
+                        self.advance()
+                        # No need to explicitly call self.advance() if self.expr() ends with advancing
+
+                    # Confirm the end of the function body with a closing parenthesis
+                    if self.current_token.type != 'CLOSINGPARENTHESIS':
+                        return res.failure(InvalidSyntaxError(
+                            self.current_token.pos_start, self.current_token.pos_end,
+                            "Expected closing parenthesis at the end of the function definition"
+                        ))
+
+                    res.register_advancement()
+                    self.advance()
+                    
+                    globalFunctions[name.value] = body, params
+                    
+                    return res.success(defunNode(name, params, body[-1]))
+                
             
         else:
+            print(self.current_token, self.token_index)
+            if self.current_token.type =='EOF':
+                print("program finalized!")
+                return res.success(FinishNode())
+            
             return res.failure(InvalidSyntaxError(
                     self.current_token.pos_start, self.current_token.pos_end,
-                    "Expected opening parenthesis"))
+                    "Syntax error"))
+                
             
         return res
                     
