@@ -1,4 +1,4 @@
-#Lexer & Parser syntax checker for Lenguajes y Maquinas class.
+# Lexer & Parser syntax checker for Lenguajes y Maquinas class.
 
 Developed by **Silvana Echeverry** and **Jose Alejandro Ovalle Villamil**
 
